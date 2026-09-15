@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Music Queue Saver",
+  "version": "1.1.0",
+  "description": "Intelligently safeguards and restores YouTube Music queues directly to your personal account.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://music.youtube.com/*",
+    "https://*.googleapis.com/*",
+    "https://*.onrender.com/*",
+    "https://*.railway.app/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://music.youtube.com/*"],
+      "js": ["src/content/backgroundPlay.ts"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": ["https://music.youtube.com/*"],
+      "js": ["src/content/content.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "src/popup/index.html"
+  },
+  "options_page": "src/options/index.html",
+  "oauth2": {
+    "client_id": "292306197166-7sb6vcqatrpgv434id78svgmqvb7145c.apps.googleusercontent.com",
+    "scopes": [
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/youtube"
+    ]
+  },
+  "web_accessible_resources": [
+  {
+    "resources": ["injected/shield.js"],
+    "matches": ["https://music.youtube.com/*"]
+  }
+]
+}
