@@ -10,24 +10,9 @@ interface Props {
   onSaved?: () => void;
 }
 
-/**
- * "Label Editor" — the cassette's settings surface.
- *
- * Deliberately narrow scope: this only exposes choices that change what
- * gets written to a tape (how much to retain, where retention starts, how
- * many tapes to keep). It does not expose:
- *   - a Google OAuth client ID field,
- *   - any "sign in with Google" branding, or
- *   - the backend API URL.
- *
- * Those remain internal implementation details (wired at build time / by
- * the account connection flow) rather than something a viewer of this UI
- * should ever need to see, type in, or reason about. Account state is
- * still readable and actionable here, just without exposing the mechanism.
- */
 export function SettingsForm({ className = '', onSaved }: Props): React.ReactElement {
   const [maxSnapshotsPerCategory, setMaxSnapshotsPerCategory] = useState(50);
-  const [songsToRetain, setSongsToRetain] = useState(0); // 0 = all
+  const [songsToRetain, setSongsToRetain] = useState(0);
   const [showCustomAmountInput, setShowCustomAmountInput] = useState(false);
   const [retainScope, setRetainScope] = useState<RetainScope>('all');
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(null);
@@ -36,13 +21,8 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState('');
 
-  // Settings fields that exist but are intentionally not editable from this
-  // form (apiUrl, googleClientId) are read once and passed straight back
-  // through on save, unchanged, so saving retention settings can never
-  // clobber them.
-  const passthroughRef = React.useRef<{ apiUrl: string; googleClientId?: string; userId: number }>({
+  const passthroughRef = React.useRef<{ apiUrl: string; googleClientId?: string }>({
     apiUrl: '',
-    userId: 1,
   });
 
   const loadAll = async () => {
@@ -51,7 +31,6 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
       passthroughRef.current = {
         apiUrl: settings.apiUrl,
         googleClientId: settings.googleClientId,
-        userId: settings.userId,
       };
       setMaxSnapshotsPerCategory(settings.maxSnapshotsPerCategory);
       setSongsToRetain(settings.songsToRetain);
@@ -118,7 +97,6 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
     try {
       await setSettings({
         apiUrl: passthroughRef.current.apiUrl,
-        userId: passthroughRef.current.userId,
         googleClientId: passthroughRef.current.googleClientId,
         maxSnapshotsPerCategory,
         songsToRetain,
@@ -139,7 +117,6 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
 
   return (
     <div className={`space-y-3 ${className}`}>
-      {/* Account status — generic, no provider branding or client id */}
       <div className="label-panel rounded-lg p-3 flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0">
           <span className={`led ${currentUser ? 'led-green' : 'led-off'}`} />
@@ -161,7 +138,6 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
         </button>
       </div>
 
-      {/* Retention */}
       <div className="cassette-shell rounded-xl p-3 space-y-3">
         <div>
           <label className="block text-xs font-bold uppercase tracking-wider text-zinc-300 mb-1">
@@ -263,7 +239,6 @@ export function SettingsForm({ className = '', onSaved }: Props): React.ReactEle
         </div>
       </div>
 
-      {/* Rack capacity */}
       <div className="cassette-shell rounded-xl p-3 space-y-2">
         <label htmlFor="maxSnapshots" className="block text-xs font-bold uppercase tracking-wider text-zinc-300">
           Tape rack limit

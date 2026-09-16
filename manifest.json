@@ -3,16 +3,15 @@
   "name": "YouTube Music Queue Saver",
   "version": "1.1.0",
   "description": "Intelligently safeguards and restores YouTube Music queues directly to your personal account.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvx0pSbIwPp7Vy6QXOSLX51vptTY8u+JoeL70OCyvw3AzMfAwy9F46tmJ6kkxG5FOP3/7G4ujrCvgVqzuGMAESiHpqc3FPyVZkQsxy9n1/6LKJwGKy+T18Pn19FQMuBQT451lWJAI/j0FQ49st4PZGkw6ZNMzLDuosLvKADeNBXgfVSsYFsPpW4okWU138k0on/0sHIc5CznGI8QjrE/q3mCA/SF6hBB/7ngiWJv/Qe4sFBdQW4M0kQBnzyNj12ggv1xzO0UAdw9GSOv/O70jr54BPDzNRUdJwBNsRL5ZR+VL3PN+QmyvrYNA4qGFn9kBlgdR4wNafJcdhfiHBX3SZQIDAQAB",
   "permissions": [
     "storage",
-    "activeTab",
-    "identity"
+    "identity",
+    "alarms"
   ],
   "host_permissions": [
     "https://music.youtube.com/*",
     "https://*.googleapis.com/*",
-    "https://*.onrender.com/*",
-    "https://*.railway.app/*",
     "http://127.0.0.1:8000/*"
   ],
   "background": {
@@ -40,14 +39,16 @@
     "client_id": "292306197166-7sb6vcqatrpgv434id78svgmqvb7145c.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/userinfo.email",
-      "https://www.googleapis.com/auth/userinfo.profile",
-      "https://www.googleapis.com/auth/youtube"
+      "https://www.googleapis.com/auth/userinfo.profile"
     ]
   },
   "web_accessible_resources": [
-  {
-    "resources": ["injected/shield.js"],
-    "matches": ["https://music.youtube.com/*"]
-  }
-]
+    {
+      "resources": [
+        "injected/shield.js",
+        "src/content/backgroundPlay.ts"
+      ],
+      "matches": ["https://music.youtube.com/*"]
+    }
+  ]
 }

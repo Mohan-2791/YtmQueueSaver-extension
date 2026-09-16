@@ -17,9 +17,7 @@ interface FetchJsonOptions extends RequestInit {
 
 /**
  * fetch() wrapper with a request timeout (AbortController), bounded
- * exponential-backoff retries for transient/network failures, and no
- * retries on 4xx client errors (retrying a bad request just wastes time
- * and hammers the backend for no benefit).
+ * exponential-backoff retries for transient/network failures.
  */
 export async function fetchJson<T>(url: string, options: FetchJsonOptions = {}): Promise<T> {
   const { timeoutMs = 8000, retries = 2, ...init } = options;
@@ -55,4 +53,26 @@ export async function fetchJson<T>(url: string, options: FetchJsonOptions = {}):
     throw new ApiError('Request timed out — check the backend URL in Settings.');
   }
   throw lastError instanceof Error ? lastError : new ApiError('Unknown network error');
+}
+
+/**
+ * Backward-compatible helper for background handlers and requests.
+ */
+export async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 8000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timer);
+  }
 }
