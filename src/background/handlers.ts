@@ -18,14 +18,76 @@ import type {
 } from '../types';
 
 /**
+ * Validates a Google OAuth access token.
+ */
+async function isGoogleTokenValid(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(token)}`);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Ensures a valid Google OAuth token is available.
+ * Tries non-interactive token refresh if the token is missing or expired.
+ */
+export async function getValidGoogleToken(): Promise<string | null> {
+  const session = await getAuthSession();
+  let token = session.googleToken;
+
+  if (token && (await isGoogleTokenValid(token))) {
+    return token;
+  }
+
+  // Clear invalid token from Google cached state if present
+  if (token) {
+    const currentToken = token;
+    await new Promise<void>((resolve) => {
+      chrome.identity.removeCachedAuthToken({ token: currentToken }, () => resolve());
+    });
+  }
+
+  // Attempt silent non-interactive refresh via Chrome Identity API
+  try {
+    token = await new Promise<string | null>((resolve) => {
+      chrome.identity.getAuthToken({ interactive: false }, (newToken) => {
+        if (chrome.runtime.lastError || !newToken) {
+          resolve(null);
+        } else {
+          resolve(newToken);
+        }
+      });
+    });
+
+    if (token) {
+      await setAuthSession({ ...session, googleToken: token });
+      return token;
+    }
+  } catch (err) {
+    logger.warn('Non-interactive Google token refresh failed:', err);
+  }
+
+  return null;
+}
+
+/**
  * Builds standard auth headers for backend requests.
+ * Includes both backend JWT and Google OAuth token (if present).
  */
 async function getAuthHeaders(): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   const { authToken } = await getAuthSession();
+  const googleToken = await getValidGoogleToken();
+
   if (authToken) {
     headers['Authorization'] = `Bearer ${authToken}`;
   }
+  if (googleToken) {
+    headers['X-Google-Token'] = googleToken;
+  }
+
   return headers;
 }
 
@@ -77,7 +139,6 @@ export async function saveSnapshot(payload: SnapshotCreatePayload): Promise<Play
     });
   } catch (err) {
     logger.warn('Backend snapshot save failed, using local persistent fallback:', err);
-    // Offline / fallback snapshot object
     created = {
       id: Date.now(),
       user_id: userId,
@@ -89,10 +150,8 @@ export async function saveSnapshot(payload: SnapshotCreatePayload): Promise<Play
     };
   }
 
-  // Save to local backup
   await saveLocalBackup(created);
 
-  // Best-effort pruning
   enforceRetentionLimit(payload.category, maxSnapshotsPerCategory).catch((err) => {
     logger.error('Failed to enforce snapshot retention limit', err);
   });
@@ -114,7 +173,6 @@ export async function fetchSnapshots(category: Category): Promise<PlaylistSnapsh
       { headers },
     );
     if (Array.isArray(remote) && remote.length > 0) {
-      // Sync local backup
       for (const s of remote) {
         saveLocalBackup(s).catch(() => {});
       }
@@ -124,13 +182,12 @@ export async function fetchSnapshots(category: Category): Promise<PlaylistSnapsh
     logger.warn('Backend fetch failed, reading from local backup:', err);
   }
 
-  // Fallback to local backup
   return getLocalBackups(category);
 }
 
 /**
- * Creates a playlist directly on YouTube Music / YouTube personal account
- * using the user's verified Google OAuth Access Token via official YouTube Data API v3.
+ * Creates a playlist directly on YouTube / YouTube Music
+ * using the user's verified Google OAuth Access Token via YouTube Data API v3.
  */
 export async function createPlaylistOnYouTubeDirect(
   accessToken: string,
@@ -169,15 +226,13 @@ export async function createPlaylistOnYouTubeDirect(
   const playlistData = await createResp.json();
   const playlistId = playlistData.id;
 
-  // 2. Add tracks to playlist CONCURRENTLY instead of one-by-one.
-  // Sequential awaits here were part of why large restores were slow enough
-  // to blow past the extension's message-channel timeout.
-  const MAX_CONCURRENT_ADDS = 8;
+  // 2. Add tracks to playlist in controlled concurrency batches (4 max concurrent)
+  const MAX_CONCURRENT_ADDS = 4;
   const videoIds = tracks.map((t) => t.videoId).filter(Boolean);
 
   async function addTrack(videoId: string): Promise<void> {
     try {
-      await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
+      const res = await fetch('https://www.googleapis.com/youtube/v3/playlistItems?part=snippet', {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -193,14 +248,14 @@ export async function createPlaylistOnYouTubeDirect(
           },
         }),
       });
+      if (!res.ok) {
+        logger.warn(`Failed to add track ${videoId} to playlist ${playlistId}, status: ${res.status}`);
+      }
     } catch (itemErr) {
       logger.warn(`Failed to add track ${videoId} to playlist ${playlistId}:`, itemErr);
     }
   }
 
-  // Simple bounded-concurrency runner: process videoIds in chunks of
-  // MAX_CONCURRENT_ADDS so we don't fire 50+ requests at once (rate limits)
-  // but also don't wait on them one at a time (10-25s+ for large playlists).
   for (let i = 0; i < videoIds.length; i += MAX_CONCURRENT_ADDS) {
     const chunk = videoIds.slice(i, i + MAX_CONCURRENT_ADDS);
     await Promise.all(chunk.map((id) => addTrack(id)));
@@ -222,17 +277,8 @@ export async function restoreSnapshot(snapshotId: number): Promise<{
 }> {
   const { apiUrl } = await getSettings();
   const headers = await getAuthHeaders();
-  const { googleToken } = await getAuthSession();
 
-  // Try backend first.
-  //
-  // IMPORTANT: restore is NOT idempotent — every call creates a brand new
-  // playlist and re-adds every track. fetchJson's default retry-on-timeout
-  // behavior is therefore dangerous here: a slow-but-successful restore that
-  // merely took longer than the timeout would get retried, silently creating
-  // a SECOND duplicate playlist. We explicitly disable retries and use a
-  // longer timeout that reflects how long a real restore can take (playlist
-  // creation + adding every track, even with concurrency on the backend).
+  // Try backend restore first
   try {
     const res = await fetchJson<{ status: string; ytm_playlist_id?: string }>(
       `${apiUrl}/api/restore/${encodeURIComponent(String(snapshotId))}`,
@@ -254,7 +300,9 @@ export async function restoreSnapshot(snapshotId: number): Promise<{
     logger.warn('Backend restore failed, attempting direct YouTube API restore:', backendErr);
   }
 
-  // Fallback: direct YouTube Data API v3 restore using Google OAuth Token
+  // Fallback: direct YouTube Data API v3 restore using valid Google OAuth Token
+  const googleToken = await getValidGoogleToken();
+
   if (googleToken) {
     const all = await getLocalBackups();
     const snapshot = all.find((s) => s.id === snapshotId);
@@ -274,7 +322,7 @@ export async function restoreSnapshot(snapshotId: number): Promise<{
   }
 
   throw new Error(
-    'Unable to restore playlist. Please sign in with Google or verify backend connection.',
+    'Unable to restore playlist. Session expired or missing permissions. Please sign in with Google again.',
   );
 }
 
@@ -286,7 +334,7 @@ export async function restoreDirectPlaylist(
   tracks: Track[],
   playbackMode: PlaybackMode,
 ): Promise<{ status: string; ytm_playlist_id?: string; playlist_url?: string }> {
-  const { googleToken } = await getAuthSession();
+  const googleToken = await getValidGoogleToken();
   if (!googleToken) {
     throw new Error('Please sign in with Google first.');
   }
@@ -303,7 +351,6 @@ export async function deleteSnapshot(snapshotId: number): Promise<void> {
   const { apiUrl } = await getSettings();
   const headers = await getAuthHeaders();
 
-  // Remove from local backup
   try {
     const res = await chrome.storage.local.get('localSnapshotsBackup');
     const existing: PlaylistSnapshot[] = Array.isArray(res.localSnapshotsBackup)
@@ -314,7 +361,6 @@ export async function deleteSnapshot(snapshotId: number): Promise<void> {
     });
   } catch {}
 
-  // Delete from backend
   try {
     await fetchJson<void>(`${apiUrl}/api/snapshots/${encodeURIComponent(String(snapshotId))}`, {
       method: 'DELETE',
@@ -325,9 +371,6 @@ export async function deleteSnapshot(snapshotId: number): Promise<void> {
   }
 }
 
-/**
- * Enforces per-category snapshot retention limit.
- */
 async function enforceRetentionLimit(category: Category, limit: number): Promise<void> {
   const snapshots = await fetchSnapshots(category);
   if (snapshots.length <= limit) return;
@@ -351,11 +394,10 @@ export async function loginWithGoogle(): Promise<UserProfile> {
 
   if (!clientId || clientId.includes('YOUR_GOOGLE_CLIENT_ID')) {
     throw new Error(
-      'Google OAuth Client ID not configured. Please paste your Google Client ID in Settings, or use the "Sign in with Test Account" button below to test immediately!',
+      'Google OAuth Client ID not configured. Please paste your Google Client ID in Settings.',
     );
   }
 
-  // If a custom client ID is configured via Settings, use launchWebAuthFlow
   if (settings.googleClientId) {
     return new Promise((resolve, reject) => {
       const redirectUri = chrome.identity.getRedirectURL();
@@ -387,7 +429,6 @@ export async function loginWithGoogle(): Promise<UserProfile> {
     });
   }
 
-  // Fallback to getAuthToken
   return new Promise((resolve, reject) => {
     chrome.identity.getAuthToken({ interactive: true }, async (token) => {
       if (chrome.runtime.lastError || !token) {
@@ -407,7 +448,7 @@ export async function loginWithGoogle(): Promise<UserProfile> {
 }
 
 /**
- * Common handler for processing verified Google OAuth token.
+ * Processes verified Google OAuth token.
  */
 async function processGoogleToken(token: string): Promise<UserProfile> {
   const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
@@ -452,9 +493,6 @@ async function processGoogleToken(token: string): Promise<UserProfile> {
   return userProfile;
 }
 
-/**
- * 1-Click login for local testing without external Google Cloud setup.
- */
 export async function loginTestUser(): Promise<UserProfile> {
   const { apiUrl } = await getSettings();
   const testProfile: UserProfile = {
@@ -483,9 +521,6 @@ export async function loginTestUser(): Promise<UserProfile> {
   return testProfile;
 }
 
-/**
- * Signs out user from Google and clears session.
- */
 export async function logout(): Promise<void> {
   const { googleToken } = await getAuthSession();
   if (googleToken) {
@@ -501,30 +536,22 @@ export async function logout(): Promise<void> {
   await clearAuthSession();
 }
 
-/**
- * Returns current auth state and user profile.
- */
 export async function getAuthState(): Promise<{
   isAuthenticated: boolean;
   user: UserProfile | null;
 }> {
   const session = await getAuthSession();
+  const validToken = await getValidGoogleToken();
   return {
-    isAuthenticated: !!(session.googleToken || session.authToken),
+    isAuthenticated: !!(validToken || session.authToken),
     user: session.currentUser,
   };
 }
 
-/**
- * Returns the live cached queue currently in storage.
- */
 export async function getCachedQueueData() {
   return getStoredCachedQueue();
 }
 
-/**
- * Clears the live cached queue in storage.
- */
 export async function clearCachedQueueData() {
   return setStoredCachedQueue(null);
 }

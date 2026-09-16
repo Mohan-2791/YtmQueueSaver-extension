@@ -2,80 +2,212 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  body {
-    background-color: #08080a;
-    color: #f4f4f5;
-    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
-    overflow-x: hidden;
+/* --------------------------------------------------------------------- */
+/* Cassette design tokens                                                */
+/* --------------------------------------------------------------------- */
+/*
+ * Palette is drawn from an actual 1980s cassette shell: smoked polycarbonate
+ * body, a stamped-foil label, a warm tape-brown spool, and three indicator
+ * colors borrowed from deck hardware (record LED, play LED, VU amber).
+ * Everything else in the UI is built out of these ten variables so the
+ * theme stays coherent instead of picking colors per-component.
+ */
+:root {
+  --shell: #17140f;
+  --shell-raised: #1f1b14;
+  --shell-edge: #0b0a08;
+  --window: #0a0908;
+  --tape: #4a3624;
+  --tape-dark: #2e2117;
+  --hub: #d8cdb4;
+  --label: #ece3cd;
+  --label-shadow: #cfc3a4;
+  --ink: #2a2419;
+  --ink-soft: #6b6050;
+  --led-red: #d1453b;
+  --led-amber: #dba05a;
+  --led-green: #7fa06f;
+}
+
+body {
+  background: var(--shell-edge);
+}
+
+/* --------------------------------------------------------------------- */
+/* Shell + panels                                                        */
+/* --------------------------------------------------------------------- */
+
+.cassette-shell {
+  background:
+    radial-gradient(120% 140% at 15% 0%, #262019 0%, transparent 55%),
+    linear-gradient(180deg, var(--shell-raised) 0%, var(--shell) 100%);
+  border: 1px solid var(--shell-edge);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 20px 40px -20px rgba(0, 0, 0, 0.8);
+}
+
+.screw {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle at 35% 35%, #4a4030, #100e0a 70%);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+
+.tape-window {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 30%),
+    var(--window);
+  border: 1px solid var(--shell-edge);
+  box-shadow: inset 0 2px 10px rgba(0, 0, 0, 0.85);
+}
+
+.label-panel {
+  background: linear-gradient(180deg, var(--label) 0%, var(--label-shadow) 100%);
+  color: var(--ink);
+  border: 1px solid #b9ac8a;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 4px 10px rgba(0, 0, 0, 0.35);
+}
+
+.label-panel .label-sub {
+  color: var(--ink-soft);
+}
+
+/* --------------------------------------------------------------------- */
+/* Reels                                                                 */
+/* --------------------------------------------------------------------- */
+
+.reel-hub {
+  background:
+    radial-gradient(circle at 38% 32%, #efe6d0 0%, var(--hub) 45%, #a99c7c 100%);
+  box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.25), 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.reel-teeth {
+  animation: reel-spin 2.4s linear infinite;
+  animation-play-state: paused;
+  transform-origin: center;
+}
+
+.reel-teeth.spinning {
+  animation-play-state: running;
+}
+
+@keyframes reel-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-/* Custom micro-scrollbar */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* --------------------------------------------------------------------- */
+/* VU meter (used for "live" / loading states)                           */
+/* --------------------------------------------------------------------- */
+
+.vu-bar {
+  width: 3px;
+  border-radius: 1px;
+  background: var(--led-amber);
+  transform-origin: bottom;
 }
 
-::-webkit-scrollbar-track {
-  background: rgba(24, 24, 27, 0.4);
+.vu-bar.b1 { animation: vu-bounce 0.9s ease-in-out infinite; animation-delay: 0ms; }
+.vu-bar.b2 { animation: vu-bounce 0.9s ease-in-out infinite; animation-delay: 140ms; }
+.vu-bar.b3 { animation: vu-bounce 0.9s ease-in-out infinite; animation-delay: 260ms; }
+.vu-bar.b4 { animation: vu-bounce 0.9s ease-in-out infinite; animation-delay: 60ms; }
+
+@keyframes vu-bounce {
+  0%, 100% { transform: scaleY(0.25); }
+  50% { transform: scaleY(1); }
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(82, 82, 91, 0.5);
+/* --------------------------------------------------------------------- */
+/* Counter digits (tape counter look for numbers / stats)                */
+/* --------------------------------------------------------------------- */
+
+.counter-digits {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  letter-spacing: 0.06em;
+  background: #0d0c09;
+  color: var(--led-amber);
+  border: 1px solid var(--shell-edge);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.9);
+}
+
+/* --------------------------------------------------------------------- */
+/* LED indicators                                                        */
+/* --------------------------------------------------------------------- */
+
+.led {
+  width: 6px;
+  height: 6px;
   border-radius: 9999px;
+  display: inline-block;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(239, 68, 68, 0.7);
+.led-red { background: var(--led-red); box-shadow: 0 0 6px 1px rgba(209, 69, 59, 0.75); }
+.led-amber { background: var(--led-amber); box-shadow: 0 0 6px 1px rgba(219, 160, 90, 0.75); }
+.led-green { background: var(--led-green); box-shadow: 0 0 6px 1px rgba(127, 160, 111, 0.75); }
+.led-off { background: #3a352c; }
+
+.led-pulse {
+  animation: led-pulse 1.6s ease-in-out infinite;
 }
 
-/* Glassmorphism card surfaces */
-.glass-panel {
-  background: rgba(18, 18, 22, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+@keyframes led-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 
-.glass-panel-subtle {
-  background: rgba(24, 24, 29, 0.6);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+/* --------------------------------------------------------------------- */
+/* Transport buttons (play / eject / stop)                               */
+/* --------------------------------------------------------------------- */
+
+.transport-btn {
+  background: linear-gradient(180deg, #2a241b, #171310);
+  border: 1px solid var(--shell-edge);
+  color: #cabf9e;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.glass-button {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(8px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.transport-btn:active {
+  transform: translateY(1px);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
 }
 
-.glass-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+.transport-btn.is-primary {
+  background: linear-gradient(180deg, #6b4038, var(--led-red));
+  color: #f6e9e5;
+  border-color: #7a2a24;
 }
 
-/* Glowing accents */
-.glow-red {
-  box-shadow: 0 0 15px rgba(239, 68, 68, 0.35);
+/* --------------------------------------------------------------------- */
+/* Motion / entrance (kept from the previous theme, renamed nowhere)     */
+/* --------------------------------------------------------------------- */
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.glow-red-sm {
-  box-shadow: 0 0 8px rgba(239, 68, 68, 0.25);
+@keyframes slideUp {
+  from { transform: translateY(16px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
-/* Equalizer soundwave animation */
-@keyframes soundwave {
-  0%, 100% { height: 4px; }
-  50% { height: 14px; }
+.animate-fadeIn { animation: fadeIn 0.18s ease-out; }
+.animate-slideUp { animation: slideUp 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@media (prefers-reduced-motion: reduce) {
+  .reel-teeth,
+  .vu-bar,
+  .led-pulse,
+  .animate-fadeIn,
+  .animate-slideUp {
+    animation: none !important;
+  }
 }
 
-.animate-bar-1 {
-  animation: soundwave 1s ease-in-out infinite;
-}
-.animate-bar-2 {
-  animation: soundwave 1s ease-in-out infinite 0.2s;
-}
-.animate-bar-3 {
-  animation: soundwave 1s ease-in-out infinite 0.4s;
-}
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3226; border-radius: 4px; }

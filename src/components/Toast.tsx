@@ -16,9 +16,17 @@ const ToastContext = createContext<ToastContextValue | null>(null);
 
 let nextId = 0;
 
+const LED_CLASS: Record<ToastKind, string> = {
+  success: 'led-green',
+  info: 'led-amber',
+  error: 'led-red',
+};
+
 /**
  * Lightweight in-popup toast system. Replaces window.alert() calls, which
  * block the extension's event loop and look out of place in a styled UI.
+ * Rendered as small deck indicator strips (LED + message) rather than
+ * generic colored banners, to stay in the cassette-deck vocabulary.
  */
 export function ToastProvider({ children }: { children: React.ReactNode }): React.ReactElement {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
@@ -39,15 +47,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }): Reac
           <div
             key={toast.id}
             role="status"
-            className={`text-xs font-medium px-3 py-2 rounded-lg border shadow-lg ${
-              toast.kind === 'success'
-                ? 'bg-zinc-900 border-emerald-800 text-emerald-400'
-                : toast.kind === 'info'
-                ? 'bg-zinc-900 border-blue-800 text-blue-300'
-                : 'bg-zinc-900 border-red-800 text-red-400'
-            }`}
+            className="cassette-shell flex items-center gap-2 text-[11px] font-medium px-3 py-2 rounded-lg text-zinc-200"
           >
-            {toast.message}
+            <span className={`led ${LED_CLASS[toast.kind]} led-pulse`} />
+            <span>{toast.message}</span>
           </div>
         ))}
       </div>
